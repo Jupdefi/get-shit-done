@@ -675,10 +675,225 @@ agent-zero/
 
 ---
 
+## Ralph Wiggum Integration
+
+The [Ralph Wiggum plugin](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum) is an official Anthropic plugin that creates autonomous iteration loops. It's highly complementary to GSD.
+
+### Why GSD + Ralph Wiggum?
+
+| GSD Provides | Ralph Wiggum Provides | Together |
+|--------------|----------------------|----------|
+| Structured PLAN.md with clear tasks | Autonomous retry loops | Plans execute until complete |
+| Explicit completion criteria | Stop hook that checks criteria | No manual re-prompting |
+| Per-task verification commands | Iteration on failures | Self-correcting execution |
+| Context engineering | Persistent file state | Each iteration sees prior work |
+
+### Installation
+
+```bash
+# In Claude Code
+/plugin marketplace add anthropics/claude-code
+/plugin install ralph-wiggum@claude-plugins-official
+```
+
+### Using GSD Plans as Ralph Loop Prompts
+
+GSD's PLAN.md format naturally maps to Ralph Wiggum's requirements:
+
+**Converting a PLAN.md to a Ralph loop:**
+
+```bash
+/ralph-loop "Execute the plan at .planning/phases/01-auth/01-01-PLAN.md
+
+For each task in <tasks>:
+1. Read the task specification
+2. Implement the <action> exactly as specified
+3. Run the <verify> command
+4. If verification fails, debug and retry
+5. Commit with: feat(01-auth): <task-name>
+6. Move to next task
+
+When ALL tasks complete and ALL verifications pass:
+Output <promise>PHASE_COMPLETE</promise>
+
+If stuck after 10 attempts on same task:
+- Document the blocker in .planning/STATE.md
+- Output <promise>PHASE_BLOCKED</promise>" --completion-promise "PHASE_" --max-iterations 50
+```
+
+### GSD-Optimized Ralph Workflow
+
+**Step 1: Create plan with GSD**
+```bash
+/gsd:plan-phase 01-auth
+```
+
+**Step 2: Execute with Ralph loop**
+```bash
+/ralph-loop "@.planning/phases/01-auth/01-01-PLAN.md
+
+Execute this GSD plan autonomously:
+
+## Success Criteria
+- All <task> elements completed
+- All <verify> commands pass
+- All changes committed to git
+- SUMMARY.md created with results
+
+## Process
+For each task:
+1. Read task specification
+2. Implement <action>
+3. Run <verify> - if fails, debug and retry
+4. Commit: {type}(01-auth): {task-name}
+5. Mark task complete
+
+## Completion
+When done, create .planning/phases/01-auth/01-01-SUMMARY.md then output:
+<promise>GSD_PLAN_COMPLETE</promise>
+
+## Escape Hatch
+If blocked for 5+ iterations on same issue:
+- Log blocker to STATE.md
+- Output <promise>GSD_PLAN_BLOCKED</promise>" --completion-promise "GSD_PLAN_" --max-iterations 30
+```
+
+**Step 3: Verify and continue**
+```bash
+/gsd:verify-work   # Review what Ralph built
+/gsd:plan-phase 02-next  # Plan next phase
+```
+
+### Ralph-Optimized GSD Templates
+
+Add to your PLAN.md template for Ralph compatibility:
+
+```xml
+<ralph-config>
+  <completion-signal>GSD_PLAN_COMPLETE</completion-signal>
+  <blocked-signal>GSD_PLAN_BLOCKED</blocked-signal>
+  <max-iterations>30</max-iterations>
+  <escape-threshold>5</escape-threshold>
+</ralph-config>
+```
+
+### Automated GSD+Ralph Script
+
+Create a helper script for the full workflow:
+
+```bash
+#!/bin/bash
+# gsd-ralph-execute.sh - Execute GSD plan with Ralph loop
+
+PLAN_PATH="${1:-.planning/phases/current/PLAN.md}"
+MAX_ITER="${2:-30}"
+
+# Extract phase info from plan path
+PHASE=$(dirname "$PLAN_PATH" | xargs basename)
+
+claude --plugin ralph-wiggum "/ralph-loop \"
+Execute GSD plan: $PLAN_PATH
+
+Read the plan file and execute each <task> in order:
+1. Implement the <action> specification
+2. Run <verify> command - retry if fails
+3. Commit: feat($PHASE): task-name
+4. Continue to next task
+
+On completion:
+- Create SUMMARY.md in same directory
+- Output <promise>COMPLETE</promise>
+
+On unrecoverable block:
+- Update STATE.md with blocker details
+- Output <promise>BLOCKED</promise>
+\" --completion-promise \"COMPLETE\" --max-iterations $MAX_ITER"
+```
+
+### When to Use Each
+
+| Scenario | Use |
+|----------|-----|
+| Complex planning needed | GSD alone (`/gsd:plan-phase`) |
+| Clear plan, want autonomous execution | GSD + Ralph |
+| Quick single task | Neither (just do it) |
+| Need human checkpoints | GSD alone (Ralph skips checkpoints) |
+| Large refactor/migration | Ralph + GSD plan as context |
+| Exploratory work | GSD alone (Ralph needs clear criteria) |
+
+### Important Considerations
+
+1. **Checkpoints don't work in Ralph loops** - Ralph is for autonomous execution. If your plan has `checkpoint:decision` tasks, execute those plans with `/gsd:execute-plan` instead.
+
+2. **Cost awareness** - Ralph loops burn tokens. A 30-iteration loop can cost $30-100+. Use `--max-iterations` conservatively.
+
+3. **Clear verification is critical** - Ralph's power comes from automatic retry. Without executable `<verify>` commands, it can't self-correct.
+
+4. **Git history as context** - Each Ralph iteration sees the previous iteration's commits. GSD's per-task commits give Ralph rich context for debugging.
+
+---
+
+## Agent Zero + Ralph Wiggum + GSD
+
+For maximum autonomy, combine all three:
+
+```
+Agent Zero (Orchestrator)
+    │
+    ├── GSD Planner (subordinate)
+    │   └── Creates structured PLAN.md
+    │
+    └── Ralph Executor (subordinate with ralph-wiggum)
+        └── Loops until plan complete
+```
+
+**Agent Zero orchestration code:**
+
+```python
+async def gsd_ralph_workflow(agent, user_request):
+    """Full autonomous workflow: plan with GSD, execute with Ralph"""
+
+    # 1. Create plan using GSD methodology
+    plan_result = await agent.call_subordinate(
+        message=f"""Create a GSD plan for: {user_request}
+
+        Output a PLAN.md with:
+        - Clear <objective>
+        - 2-3 atomic <task> elements
+        - Executable <verify> commands for each task
+        - <done> criteria
+
+        Save to .planning/phases/current/PLAN.md""",
+        reset_context=True
+    )
+
+    # 2. Execute with Ralph loop
+    ralph_result = await agent.call_subordinate(
+        message="""Execute the plan at .planning/phases/current/PLAN.md
+
+        Use /ralph-loop with:
+        - The full plan content as the prompt
+        - --completion-promise "COMPLETE"
+        - --max-iterations 25
+
+        The loop will iterate until all tasks pass verification.
+
+        Return the SUMMARY.md content when done.""",
+        reset_context=True,
+        tools=["ralph-wiggum"]  # Enable Ralph plugin
+    )
+
+    return ralph_result
+```
+
+---
+
 ## Further Resources
 
 - [Get Shit Done Documentation](../README.md)
 - [GSD Plan Format Reference](../get-shit-done/references/plan-format.md)
 - [GSD Checkpoint Types](../get-shit-done/references/checkpoints.md)
 - [Agent Zero GitHub](https://github.com/agent0ai/agent-zero)
+- [Ralph Wiggum Plugin](https://github.com/anthropics/claude-code/tree/main/plugins/ralph-wiggum)
+- [Ralph Wiggum Original Technique](https://ghuntley.com/ralph/)
 - [MCP Specification](https://modelcontextprotocol.io/)
