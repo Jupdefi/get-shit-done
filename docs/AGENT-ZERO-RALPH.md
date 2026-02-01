@@ -389,9 +389,10 @@ from ralph_loop import ralph_loop
 async def main():
     # Initialize your Agent Zero (with whatever LLM you want)
     agent = Agent(
-        model="ollama/llama3",  # Or any model
-        # model="anthropic/claude-3-haiku",  # Cheap Claude option
-        # model="openai/gpt-4o-mini",  # Cheap OpenAI option
+        model="xai/grok-4.1-fast",  # Best value: $0.20/$0.50 per 1M tokens
+        # model="ollama/llama3",  # Free, local
+        # model="deepseek/deepseek-coder",  # Great for code
+        # model="openai/gpt-4o-mini",  # Alternative
     )
 
     # Option 1: Direct Ralph loop
@@ -447,24 +448,35 @@ config = RalphConfig(
 
 ## Model Recommendations
 
-| Model | Cost | Speed | Quality | Best For |
-|-------|------|-------|---------|----------|
+| Model | Input/Output (per 1M) | Speed | Quality | Best For |
+|-------|----------------------|-------|---------|----------|
+| **Grok 4.1 Fast** | **$0.20 / $0.50** | Fast | Excellent | **Best value for loops** |
 | Ollama/Llama3 | Free (local) | Medium | Good | Development, testing |
-| Ollama/CodeLlama | Free (local) | Medium | Good for code | Code-heavy tasks |
-| Claude Haiku | $0.25/M tokens | Fast | Good | Quick iterations |
-| GPT-4o-mini | $0.15/M tokens | Fast | Good | Budget production |
-| DeepSeek Coder | Cheap | Fast | Great for code | Code tasks |
-| Claude Sonnet | $3/M tokens | Medium | Excellent | Complex tasks |
+| DeepSeek V3 | $0.27 / $1.10 | Fast | Great for code | Code tasks |
+| GPT-4o-mini | $0.15 / $0.60 | Fast | Good | Budget alternative |
+| Claude Haiku | $0.25 / $1.25 | Fast | Good | Quick iterations |
+| Grok 3 Mini | $0.30 / $0.50 | Fast | Good | Simpler tasks |
+| Claude Sonnet | $3 / $15 | Medium | Excellent | Complex tasks |
+| Grok 4 (full) | $3 / $15 | Medium | Excellent | When you need the best |
 
-**Cost comparison for 20-iteration loop:**
+**Cost comparison for 20-iteration loop (~50k tokens/iteration):**
 
 | Model | Est. Cost |
 |-------|-----------|
 | Local (Ollama) | $0 |
+| **Grok 4.1 Fast** | **$0.35-1.50** |
+| DeepSeek V3 | $0.70-2.50 |
 | GPT-4o-mini | $0.50-2 |
 | Claude Haiku | $1-3 |
 | Claude Sonnet | $10-30 |
-| GPT-4o | $20-50 |
+| Grok 4 / GPT-4o | $20-50 |
+
+### Why Grok 4.1 Fast for Ralph Loops
+
+- Nearly matches Grok 4 quality (64 vs 65 benchmark) at 1/15th the cost
+- 256K context window - fits large codebases
+- Built-in tools (web search, code execution) at $2.50-5/1000 calls
+- Fast inference = quicker iterations
 
 ## Integration with Agent Zero Tools
 
